@@ -24,13 +24,27 @@ export const Game = () => {
   const [winner, setWinner] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string>("");
   const [loadingQuestion, setLoadingQuestion] = useState<boolean>(false);
+  const [gameCode, setGameCode] = useState<string | null>(null);
+  const [isCreator, setIsCreator] = useState<boolean>(false);
 
   useEffect(() => {
     if (!socket) return;
 
     const onConnect = () => {
       setSelfId(socket.id || "");
-      socket.emit("join_game");
+    };
+
+    const onGameCreated = (data: { gameCode: string }) => {
+      setGameCode(data.gameCode);
+      setIsCreator(true);
+    };
+
+    const onJoinedGame = (data: { gameCode: string }) => {
+      setGameCode(data.gameCode);
+    };
+
+    const onJoinError = (errorMsg: string) => {
+      alert(`Error joining game: ${errorMsg}`);
     };
 
     const onGameStart = (playerList: Player[]) => {
@@ -61,13 +75,23 @@ export const Game = () => {
       setStatus("gameover");
     };
 
+    const onGameCancelled = (reason: string) => {
+      alert(`Game cancelled: ${reason}`);
+      setStatus("lobby");
+      setGameCode(null);
+    };
+
     socket.on("connect", onConnect);
+    socket.on("game_created", onGameCreated);
+    socket.on("joined_game", onJoinedGame);
+    socket.on("join_error", onJoinError);
     socket.on("game_start", onGameStart);
     socket.on("new-question", onQuestion);
     socket.on("score_update", onScoreUpdate);
     socket.on("point_awarded", onCorrect);
     socket.on("wrong_answer", onWrong);
     socket.on("game_over", onGameOver);
+    socket.on("game_cancelled", onGameCancelled);
 
     const questionTimeout = setTimeout(() => {
       if (status === "playing" && !question) {
@@ -77,31 +101,60 @@ export const Game = () => {
 
     return () => {
       socket.off("connect", onConnect);
+      socket.off("game_created", onGameCreated);
+      socket.off("joined_game", onJoinedGame);
+      socket.off("join_error", onJoinError);
       socket.off("game_start", onGameStart);
       socket.off("new-question", onQuestion);
       socket.off("score_update", onScoreUpdate);
       socket.off("point_awarded", onCorrect);
       socket.off("wrong_answer", onWrong);
       socket.off("game_over", onGameOver);
+      socket.off("game_cancelled", onGameCancelled);
       clearTimeout(questionTimeout);
     };
   }, [socket, status, question]);
 
   const handleAnswer = (opt: string) => {
-    socket.emit("submit_answer", opt);
+    socket?.emit("submit_answer", opt);
+  };
+
+  const handleCreateGame = () => {
+    socket?.emit("create_game");
+  };
+
+  const handleJoinGame = (code: string) => {
+    socket?.emit("join_game", { gameCode: code });
+  };
+
+  const handleStartGame = () => {
+    socket?.emit("start_game");
   };
 
   const handleRestart = () => {
-    socket.emit("restart_game");
+    socket?.emit("restart_game");
     setStatus("lobby");
     setWinner(null);
     setQuestion(null);
     setFeedback("");
   };
 
-  if (status === "lobby") return <Lobby />;
-  if (status === "gameover" && winner)
+  if (status === "lobby") {
+    return (
+      <Lobby 
+        gameCode={gameCode} 
+        isCreator={isCreator} 
+        onCreateGame={handleCreateGame} 
+        onJoinGame={handleJoinGame}
+        onStartGame={handleStartGame}
+        players={players}
+      />
+    );
+  }
+  
+  if (status === "gameover" && winner) {
     return <GameOver winner={winner} selfId={selfId} onRestart={handleRestart} />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-blue-50 to-purple-100 p-4">
